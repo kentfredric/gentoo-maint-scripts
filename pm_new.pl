@@ -54,7 +54,7 @@ sub get_newest_ebuild {
     }
     my ( $best, @rest ) =
       map { $_->[1] }
-      sort { atom_cmp( $a, $b ) }
+      sort { atom_cmp( $a->[0], $b->[0] ) }
       map { [ "$cat/" . $_->basename('.ebuild'), $_ ] } @children;
     warn "Using $best as a template";
     return $best->slurp_raw();
