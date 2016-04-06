@@ -3,14 +3,27 @@
 
 use strict;
 use warnings;
-use Git::Wrapper ();
 use File::chdir;
+use Path::Tiny 0.082 qw( path );    # working realpath
 
-$ENV{GPG_TTY} = qx{tty};
+$ENV{GPG_TTY} //= qx{tty};
+
+use constant _inc => path(
+    sub { ( caller(0) )[1] }
+      ->()
+)->realpath->parent->child('lib')->stringify;
+use lib _inc;
+
+use My::Git::Wrapper;
+use My::Note qw( note $TASK );
+use My::Git::Utils
+  qw( has_branch branch_contains refresh_remote copy_branch has_remote_branch );
+use My::Gn2::Repo qw( show_new_since );
 
 use constant FORCE_REBASE  => $ENV{FORCE_REBASE};
 use constant LOCAL_UPDATES => $ENV{LOCAL_UPDATES};
 use constant DO_ATTIC      => $ENV{ATTIC};
+use constant NO_PUSH       => $ENV{NO_PUSH};
 
 use constant UPSTREAM_REPO   => 'upstream';
 use constant UPSTREAM_BRANCH => 'master';
@@ -25,32 +38,47 @@ use constant QUEUE_THREAD_PREFIX => 'kentnl/';
 
 use constant STAGING_BRANCH => 'staging-for-gentoo';
 
-my $GW = Git::Wrapper->new("/usr/local/gentoo");
+my $GW = My::Git::Wrapper->new("/usr/local/gentoo");
 
 my (@MERGE_LIST) = (    #
-    'bump-PDF-Create',
-    'fix-Period-names',
-    'bump-Perl-Critic',
+    'bump-Pod-Spell',
+    'bump-POE-Component-Client-DNS',
+    'bump-POE-Component-IKC',
+    'bump-POSIX-strftime-Compiler',
+    'bump-PostScript-Simple',
+    'bump-PPIx-Regexp',
+    'bump-Probe-Perl',
+    'bump-Proc-Daemon',
 );
 
-my %NEEDS = (           #
-
+my %NEEDS = (
+    #
 );
-my (@STAGING_LIST) = (    #
-);
-my (@ATTIC) = ( 'perl-dist-zilla', );
 
-push @STAGING_LIST, @ATTIC if DO_ATTIC;
+#my (@ATTIC) = ( 'perl-dist-zilla', );
+#
+#push @STAGING_LIST, @ATTIC if DO_ATTIC;
 
-refresh_remote(UPSTREAM_REPO) if not LOCAL_UPDATES;
+$TASK = "SYNC";
 
-unless ( should_rebase() ) {
-    print '* ' . QUEUE_BRANCH . ' is ahead of ' . UPSTREAM_REF . " stopping\n";
-    exit 0;
+refresh_remote( $GW, UPSTREAM_REPO ) if not LOCAL_UPDATES;
+
+exit 0 unless LOCAL_UPDATES or should_rebase();
+
+unless ( branch_contains( $GW, QUEUE_BRANCH, UPSTREAM_REF ) ) {
+    show_new_since( $GW, UPSTREAM_REF, QUEUE_BRANCH );
 }
 
-if ( not LOCAL_UPDATES ) {
-    upload( UPSTREAM_REF . ':master' );
+unless ( NO_PUSH or LOCAL_UPDATES ) {
+    unless (
+        branch_contains(
+            $GW, UPSTREAM_REF, 'refs/remotes/' . MY_REPO . '/master'
+        )
+      )
+    {
+        upload( UPSTREAM_REF . ':master' );
+    }
+}
 
 # All branches in @MERGE_LIST are also in
 #   ref/braches/QUEUE_THREAD_PREFIX/<BRANCHNAME>
@@ -61,10 +89,36 @@ if ( not LOCAL_UPDATES ) {
 #
 # This rebases all "kentnl/topicname" onto "upstream/master" when upstream/master changes.
 
-    for my $target (@MERGE_LIST) {
-        rebase_preferred( $target, UPSTREAM_REF );
-        upload( real_name($target) );
+my $needs_reconstruct;
+
+item: for my $target (@MERGE_LIST) {
+    $TASK = "Reparent $target";
+    my $real_name = real_name($target);
+    my $ready     = is_ready($target);
+
+    next unless LOCAL_UPDATES xor $ready;
+
+  fixup: {
+        if ( branch_contains( $GW, UPSTREAM_REF, $real_name ) ) {
+            note( $real_name . ' is ahead of ' . UPSTREAM_REF, ['green'] );
+            last fixup unless FORCE_REBASE;
+        }
+
+        rebase_preferred( $target, UPSTREAM_REF ) if LOCAL_UPDATES xor $ready;
+        $needs_reconstruct = 1;
+
+        next item unless $ready;
     }
+
+    next item if LOCAL_UPDATES;
+
+    if ( has_remote_branch( $GW, MY_REPO . '/' . $real_name ) ) {
+        next item
+          if branch_contains( $GW, $real_name,
+            'refs/remotes/' . MY_REPO . '/' . $real_name );
+    }
+    upload($real_name) unless NO_PUSH;
+}
 
 # All these topic branches are then played out in linear order
 # on top of each other and upstream/master, creating a new branch "for-gentoo" ( QUEUE_BRANCH )
@@ -78,12 +132,23 @@ if ( not LOCAL_UPDATES ) {
 #
 #      - upstream/master .. kentnl/a .. kentnl/b
 
-    copy_branch( UPSTREAM_REF, QUEUE_BRANCH );
+if ( not LOCAL_UPDATES and $needs_reconstruct ) {
+    $TASK = "Union Queue";
 
-    merge_rebase( QUEUE_THREAD_PREFIX . $_ => QUEUE_BRANCH ) for @MERGE_LIST;
+    copy_branch( $GW, UPSTREAM_REF, QUEUE_BRANCH );
 
-    upload(QUEUE_BRANCH);
+    for my $target (@MERGE_LIST) {
+        $TASK = "Union <$target>";
+        my $real_name = real_name($target);
+        my $ready     = is_ready($target);
+        next unless $ready;
+        merge_rebase( $real_name => QUEUE_BRANCH );
+    }
+    $TASK = "Push Union";
+    upload(QUEUE_BRANCH) unless NO_PUSH;
+
 }
+
 if (LOCAL_UPDATES) {
 
   # This is the same logic as above, but for a secondary class of branches
@@ -100,31 +165,32 @@ if (LOCAL_UPDATES) {
   #         ... ( more branches )
   #            ... staging-for-gentoo
   #
-    rebase_preferred( $_ => UPSTREAM_REF ) for @STAGING_LIST;
-    copy_branch( QUEUE_BRANCH, STAGING_BRANCH );
-    merge_rebase( $_ => STAGING_BRANCH ) for @STAGING_LIST;
-}
+  #  rebase_preferred( $_ => UPSTREAM_REF ) for @STAGING_LIST;
+    copy_branch( $GW, QUEUE_BRANCH, STAGING_BRANCH );
 
-sub Git::Wrapper::RUN_DIRECT {
-    my ( $self, $cmd, @args ) = @_;
-    my ( $parts, $stdin ) = Git::Wrapper::_parse_args( $cmd, @args );
-    my (@cmd) = ( $self->git, @{$parts} );
-    local $CWD = $self->dir unless $cmd eq 'clone';
-    system(@cmd);
-    if ($?) {
-        die Git::Wrapper::Exception->new(
-            output => [],
-            error  => [],
-            status => $? >> 8,
-        );
+    for my $target (@MERGE_LIST) {
+        my $real_name = real_name($target);
+        my $ready     = is_ready($target);
+        next if $ready;
+        note( "Staging: " . $real_name, ['green'] );
+        if ( branch_contains( $GW, $real_name, STAGING_BRANCH ) ) {
+            note( $real_name . ' is ahead of ' . STAGING_BRANCH, ['green'] );
+            next unless FORCE_REBASE;
+        }
+        merge_rebase( $real_name => STAGING_BRANCH );
+
     }
-    return $?;
+
 }
 
 sub should_rebase {
     return 1 if FORCE_REBASE;
-    return 1 if LOCAL_UPDATES;
-    return 1 unless x_aheadof_y( QUEUE_BRANCH, UPSTREAM_REF );
+    return 1 unless branch_contains( $GW, QUEUE_BRANCH, UPSTREAM_REF );
+    note( QUEUE_BRANCH . ' is ahead of ' . UPSTREAM_REF, ['red'] );
+    for my $branchname ( map { QUEUE_THREAD_PREFIX . $_ } @MERGE_LIST ) {
+        return 1 unless branch_contains( $GW, $branchname, UPSTREAM_REF );
+        note( $branchname . ' is ahead of ' . UPSTREAM_REF, ['red'] );
+    }
     return 0;
 }
 
@@ -132,59 +198,44 @@ sub remote_names { $GW->remote() }
 
 sub real_name {
     my ($branchname) = @_;
-    if ( grep { $_ eq $branchname } @MERGE_LIST ) {
-        return QUEUE_THREAD_PREFIX . $branchname;
-    }
-    if ( grep { $_ eq $branchname } @STAGING_LIST ) {
-        return $branchname;
-    }
+
+    return $branchname if has_branch( $GW, $branchname );
+    return QUEUE_THREAD_PREFIX . $branchname
+      if has_branch( $GW, QUEUE_THREAD_PREFIX . $branchname );
+
     die "Cant resolve $branchname";
 }
 
-sub note {
-    print STDERR "\e[32m * \e[0m @_\n";
+sub is_ready {
+    my ($branchname) = @_;
+    return ( ( QUEUE_THREAD_PREFIX . $branchname ) eq real_name($branchname) );
 }
 
 sub rebase_preferred {
     my ( $branchname, $default_onto ) = @_;
     if ( exists $NEEDS{$branchname} ) {
-        note("Rebasing $branchname onto $NEEDS{$branchname}");
+        note( "Rebasing $branchname onto $NEEDS{$branchname}", ['yellow'] );
+        show_new_since( $GW, real_name( $NEEDS{$branchname} ),
+            real_name($branchname) );
         return rebase( real_name($branchname),
             real_name( $NEEDS{$branchname} ) );
     }
-    note("Rebasing $branchname onto $default_onto");
+    note( "Rebasing $branchname onto $default_onto", ['yellow'] );
+    show_new_since( $GW, real_name($branchname), $default_onto );
 
     return rebase( real_name($branchname), $default_onto );
 }
 
-sub x_aheadof_y {
-    my ( $branch, $upstream ) = @_;
-    for my $ahead_branch ( $GW->branch( '-a', '--contains', $upstream ) ) {
-        return 1 if $ahead_branch =~ /\A\s*\*?\s*\Q$branch\E\s*\z/;
-    }
-    return;
-}
-
-sub refresh_remote {
-    my ($remote_name) = @_;
-    $GW->RUN_DIRECT( 'remote', '-v', 'update', $remote_name );
-}
-
 sub upload {
     my ($branch) = @_;
+    note( "Uploading $branch to " . MY_REPO, ['magenta'] );
     $GW->RUN_DIRECT( 'push', '-f', MY_REPO, $branch );
-}
-
-sub copy_branch {
-    my ( $from, $to ) = @_;
-    note("Copying $from to $to");
-
-    $GW->RUN_DIRECT( 'checkout', '-B', $to, $from );
 }
 
 sub rebase {
     my ( $what, $onto ) = @_;
-    note("Rebase $what onto $onto");
+    note( "Rebase $what onto $onto", ['cyan'] );
+    show_new_since( $GW, $onto, $what );
 
     #   git says "$what" is "upstream" and "$onto" is "branch"
     #   .... Not confusing at all<!>
@@ -195,13 +246,20 @@ sub rebase {
 sub merge_rebase {
     my ( $what, $onto ) = @_;
     my ( $sha1, ) = $GW->rev_parse($what);
-    note("Rebase $sha1 onto $onto for $what");
-    $GW->RUN_DIRECT( 'checkout', $sha1 );
-    $GW->RUN_DIRECT( 'rebase',   $onto );
+    note( "Fastforward $onto to cherry-pick $what", ['green'] );
+
+    #note( "Rebase $sha1 onto $onto for $what", ['cyan'] );
+    $GW->RUN_DIRECT( 'checkout', '-q', $sha1 );
+
+    #    note( "...", ['cyan'] );
+    $GW->RUN_DIRECT( 'rebase', '-q', $onto );
     my ( $new_sha, ) = $GW->rev_parse('HEAD');
-    note("FF $onto -> $new_sha for $what");
-    $GW->RUN_DIRECT( 'checkout', $onto );
-    $GW->RUN_DIRECT( 'merge', '--ff-only', $new_sha );
+
+    #   note( "FF $onto -> $new_sha for $what", ['yellow'] );
+    $GW->RUN_DIRECT( 'checkout', '-q', $onto );
+
+    #    note( "...", ['yellow'] );
+    $GW->RUN_DIRECT( 'merge', '--ff-only', '-n', $new_sha );
 }
 
 sub proto_merge_rebase {
