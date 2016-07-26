@@ -5,6 +5,11 @@ use warnings;
 use Path::Tiny qw( path );
 use Term::ANSIColor qw( colorstrip );
 
+# Note: Expected layout is
+#  $CWD/
+#  $CWD/travis_buildthing/
+#  $CWD/travis_buildthing/*.log
+
 for my $child ( grep { $_->is_dir } path('.')->children ) {
   print "$child\n";
   my @entries;
