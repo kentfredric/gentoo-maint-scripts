@@ -1,5 +1,6 @@
 #!/usr/bin/env perl
 
+# -- This file originally by ribasushi stolen from DBIX-Class/maint/
 use warnings;
 use strict;
 
