@@ -38,7 +38,8 @@ sub find_candidates {
     *STDERR->print("\nScanning for: @atoms\n");
     do { my $selected = select *STDERR; $|++; select $selected };
 
-    my $it = ebuild_iterator(root);
+    my $it      = ebuild_iterator(root);
+    my $n_atoms = scalar @atoms;
 
     # Fast-pass with a compiled regex
     my $matchre_s        = join q[|], map quotemeta, @atoms;
@@ -63,6 +64,9 @@ sub find_candidates {
         next if exists $matched_dists{$dist};
         my $fh = path($file)->openr_raw;
       line: while ( my $line = <$fh> ) {
+
+     # Optimisation speeds up early passes by stopping IO if all atoms are found
+            next file if $n_atoms == keys %{ $matched_dists{$dist} || {} };
             next line unless $line =~ $matchre;
           atom: for my $atom (@atoms) {
                 next atom if exists $matched_dists{$dist}{$atom};
