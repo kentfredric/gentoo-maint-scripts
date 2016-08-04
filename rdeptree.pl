@@ -17,13 +17,14 @@ my (@starting_keys) = (
 
 my $aggregate = {};
 
-for ( 0 .. 1 ) {
-    my $next = find_candidates(@starting_keys);
+for ( 0 .. 2 ) {
+    my $previous_state = { %{$aggregate} };
+    my $next           = find_candidates(@starting_keys);
     for my $source ( keys %{$next} ) {
         $aggregate->{$source} =
           { %{ $aggregate->{$source} || {} }, %{ $next->{$source} } };
     }
-    @starting_keys = keys %{$next};
+    @starting_keys = grep { not exists $previous_state->{$_} } keys %{$next};
 }
 print pp $aggregate;
 print "\n";
