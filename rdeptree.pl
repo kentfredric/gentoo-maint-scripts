@@ -102,8 +102,10 @@ sub score_heat {
       )
     {
         my (@want_dep) =
-          sort { ( $wanted_scores{$b} || 0 ) <=> ( $wanted_scores{$a} || 0 ) || $a cmp $b }
-          @{ $wanted{$module} || [] };
+          sort {
+            ( $wanted_scores{$b} || 0 ) <=> ( $wanted_scores{$a} || 0 )
+              || $a cmp $b
+          } @{ $wanted{$module} || [] };
         push @pairs, [ $module, $wanted_scores{$module}, \@want_dep ];
     }
     return @pairs;
