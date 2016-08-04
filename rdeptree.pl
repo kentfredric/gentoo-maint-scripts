@@ -28,7 +28,9 @@ for ( 0 .. 1 ) {
 print pp $aggregate;
 print "\n";
 for my $heat ( score_heat($aggregate) ) {
-    printf "%s: %s\n", @{$heat};
+    my ( $name, $score, $items ) = @{$heat};
+    printf "%-60s: %4s <= %60s\n", $name, $score,
+      substr do { join q[, ], @{$items} }, 0, 60;
 }
 
 sub find_candidates {
@@ -47,16 +49,17 @@ sub find_candidates {
     my $matchre = qr{ ${nonatom} (?:${matchre_s}) ${optional_version} }x;
 
     my %matched_dists;
-    my $last_dist = 'DOESNOTEXIST';
-    my $last_cat  = 'DOESNOTEXIST';
+    my $last_pn  = 'DOESNOTEXIST';
+    my $last_cat = 'DOESNOTEXIST';
   file: while ( my ( $cat, $pn, $file ) = @{ $it->() || [] } ) {
-        my $cats  = path($cat)->relative(root)->stringify;
-        my $dist = path($pn)->relative($cat)->stringify;
-        if ( $cats ne $last_cat or $dist ne $last_dist) {
-            *STDERR->printf("%30s/%-50s\r", $cats, $dist);
+        my $cats = path($cat)->relative(root)->stringify;
+        my $pns  = path($pn)->relative($cat)->stringify;
+        if ( $cats ne $last_cat or $pns ne $last_pn ) {
+            *STDERR->printf( "%30s/%-50s\r", $cats, $pns );
             $last_cat = $cats;
-            $last_dist = $dist;
+            $last_pn  = $pns;
         }
+        my $dist = "$cats/$pns";
         next if exists $matched_dists{$dist};
         my $fh = path($file)->openr_raw;
       line: while ( my $line = <$fh> ) {
@@ -80,13 +83,24 @@ sub find_candidates {
 sub score_heat {
     my (%hash) = %{ $_[0] };
     my (%wanted);
+    my (%wanted_scores);
     for my $package ( keys %hash ) {
         for my $wants ( keys %{ $hash{$package} } ) {
-            $wanted{$wants}++;
+            push @{ $wanted{$wants} }, $package;
+            $wanted_scores{$wants}++;
         }
     }
-    my (@pairs) =
-      sort { $a->[1] <=> $b->[1] } map { [ $_, $wanted{$_} ] } keys %wanted;
+    my (@pairs);
+    for my $module (
+        sort { $wanted_scores{$a} <=> $wanted_scores{$b} || $a cmp $b }
+        keys %wanted
+      )
+    {
+        my (@want_dep) =
+          sort { ( $wanted_scores{$b} || 0 ) <=> ( $wanted_scores{$a} || 0 ) || $a cmp $b }
+          @{ $wanted{$module} || [] };
+        push @pairs, [ $module, $wanted_scores{$module}, \@want_dep ];
+    }
     return @pairs;
 
 }
