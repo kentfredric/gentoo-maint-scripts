@@ -128,7 +128,7 @@ sub files {
 }
 
 sub ebuild_iterator {
-    my $categories = categories()->iter( $_[0] );
+    my $categories = categories()->iter_fast( $_[0] );
     my $pkg_it;
     my $file_it;
     my ( $cat, $pkg, $file );
@@ -141,7 +141,7 @@ sub ebuild_iterator {
                 not defined $cat and $done = 1 and return undef;
             }
             if ( not defined $pkg_it ) {
-                $pkg_it = packages()->iter($cat);
+                $pkg_it = packages()->iter_fast($cat);
             }
             if ( not defined $pkg ) {
                 $pkg = $pkg_it->();
@@ -149,7 +149,7 @@ sub ebuild_iterator {
                   and next;
             }
             if ( not defined $file_it ) {
-                $file_it = files()->name(qr/.ebuild$/)->iter($pkg);
+                $file_it = files()->name(qr/.ebuild$/)->iter_fast($pkg);
             }
             $file = $file_it->();
             not defined $file and do { undef $pkg; undef $file_it; 1 }
