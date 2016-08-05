@@ -12,7 +12,7 @@ use Data::Dump qw(pp);
 my (@starting_keys) = (
     'dev-perl/Test-Pod',               'dev-perl/Test-Pod-Coverage',
     'dev-perl/Test-Portability-Files', 'dev-perl/Test-Perl-Critic',
-    'dev-perl/Test-CPAN-Meta'
+    'dev-perl/Test-CPAN-Meta',         'dev-perl/Test-Distribution',
 );
 
 my $aggregate = {};
@@ -30,8 +30,8 @@ print pp $aggregate;
 print "\n";
 for my $heat ( score_heat($aggregate) ) {
     my ( $name, $score, $items ) = @{$heat};
-    printf "%-60s: %4s <= %60s\n", $name, $score,
-      substr do { join q[, ], @{$items} }, 0, 60;
+    printf "%-60s: %10.1f <= %-120s\n", $name, $score,
+      substr do { join q[, ], @{$items} }, 0, 120;
 }
 
 sub find_candidates {
@@ -89,26 +89,49 @@ sub score_heat {
     my (%hash) = %{ $_[0] };
     my (%wanted);
     my (%wanted_scores);
+    my $max_score = 0;
     for my $package ( keys %hash ) {
         for my $wants ( keys %{ $hash{$package} } ) {
             push @{ $wanted{$wants} }, $package;
             $wanted_scores{$wants}++;
+            $max_score = $wanted_scores{$wants}
+              if $max_score < $wanted_scores{$wants};
         }
     }
-    my (@pairs);
-    for my $module (
-        sort { $wanted_scores{$a} <=> $wanted_scores{$b} || $a cmp $b }
-        keys %wanted
-      )
-    {
-        my (@want_dep) =
-          sort {
-            ( $wanted_scores{$b} || 0 ) <=> ( $wanted_scores{$a} || 0 )
-              || $a cmp $b
-          } @{ $wanted{$module} || [] };
-        push @pairs, [ $module, $wanted_scores{$module}, \@want_dep ];
+
+    # Initial sort
+    my (@pairs) = sort { $a->[1] <=> $b->[1] || $a->[0] cmp $b->[0] }
+      map { [ $_, $wanted_scores{$_}, [], 1 ] } keys %wanted;
+
+    # Percolate scores in ascending score order
+    for my $pair (@pairs) {
+        my ( $module, $score, $wanted_by, $boost ) = @{$pair};
+        for my $wanter ( @{ $wanted{$module} || [] } ) {
+            next unless exists $wanted_scores{$wanter};
+            $wanted_scores{$module} += $wanted_scores{$wanter};
+        }
     }
-    return @pairs;
+
+    # Apply percolated scores
+    for my $pair (@pairs) {
+        my ( $module, $score, $wanted_by, $boost ) = @{$pair};
+        for my $wanter ( @{ $wanted{$module} || [] } ) {
+            next unless exists $wanted_scores{$wanter};
+            $pair->[1] += ( $wanted_scores{$wanter} / 2 );
+        }
+    }
+    for my $pair (@pairs) {
+        my ( $module, $score ) = @{$pair};
+        $pair->[2] = [
+            sort {
+                ( $wanted_scores{$b} || 0 ) <=> ( $wanted_scores{$a} || 0 )
+                  || $a cmp $b
+            } @{ $wanted{$module} || [] }
+        ];
+    }
+
+    # Resort after rescoring
+    return sort { $a->[1] <=> $b->[1] || $a->[0] cmp $b->[0] } @pairs;
 
 }
 
