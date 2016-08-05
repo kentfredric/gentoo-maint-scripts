@@ -68,6 +68,9 @@ sub find_candidates {
 
      # Optimisation speeds up early passes by stopping IO if all atoms are found
             next file if $n_atoms == keys %{ $matched_dists{$dist} || {} };
+
+            # skip comments/blanks
+            next line if $line =~ /^\s*(#.*)?$/;
             next line unless $line =~ $matchre;
           atom: for my $atom (@atoms) {
                 next atom if exists $matched_dists{$dist}{$atom};
