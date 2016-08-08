@@ -106,16 +106,16 @@ sub find_candidates {
     my $keywords_extract = qr/^\s*KEYWORDS=["']?(.*)["']?\s*$/;
     my $commands         = qr/src_remove_dual(_man)?/;
     my %matched_dists;
-    my $last_pn  = 'DOESNOTEXIST';
-    my $last_cat = 'DOESNOTEXIST';
+    my $cats = 'DOESNOTEXIST';
+    my $pns  = 'DOESNOTEXIST';
+
+    my $ticker =
+      ticker( 0.04 => sub { *STDERR->printf( "%30s/%-50s\r", $cats, $pns ) } );
+
   file: while ( my ( $cat, $pn, $file ) = @{ $it->() || [] } ) {
-        my $cats = path($cat)->relative(root)->stringify;
-        my $pns  = path($pn)->relative($cat)->stringify;
-        if ( $cats ne $last_cat or $pns ne $last_pn ) {
-            *STDERR->printf( "%30s/%-50s\r", $cats, $pns );
-            $last_cat = $cats;
-            $last_pn  = $pns;
-        }
+        $cats = path($cat)->relative(root)->stringify;
+        $pns  = path($pn)->relative($cat)->stringify;
+        $ticker->();
         my $dist = "$cats/$pns";
         next if exists $matched_dists{$dist};
         my $fh = path($file)->openr_raw;
