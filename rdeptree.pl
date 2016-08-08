@@ -72,6 +72,7 @@ sub find_candidates {
         $atom_text =~ s/,\s\S*?\z/.../ if 200 < length $atom_text;
         *STDERR->print("\nScanning for(${\scalar @atoms}): $atom_text\n");
     }
+    return {} if not @atoms;
     do { my $selected = select *STDERR; $|++; select $selected };
 
     my $it      = ebuild_iterator(root);
