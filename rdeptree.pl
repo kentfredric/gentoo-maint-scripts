@@ -177,6 +177,14 @@ sub score_heat {
                   || $a cmp $b
               } @{ $wanted{$module} || [] }
         ];
+        $pair->[3] = [
+            map { $_ . '(' . ( $wanted_scores{$_} || 0 ) . ')' }
+              sort {
+                ( $wanted_scores{$b} || 0 ) <=> ( $wanted_scores{$a} || 0 )
+                  || $a cmp $b
+              } keys %{ $hash{$module} || {} }
+        ];
+
     }
 
     # Resort after rescoring
