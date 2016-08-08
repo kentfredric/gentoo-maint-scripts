@@ -164,6 +164,33 @@ sub ebuilds {
     return files()->name(qr/.ebuild$/);
 }
 
+sub package_iterator {
+    my $categories = categories()->iter_fast( $_[0] );
+    my $pkg_it;
+    my ( $cat, $pkg, );
+    my $done;
+    return sub {
+        while (1) {
+            return undef if $done;
+            if ( not defined $cat ) {
+                $cat = $categories->();
+                not defined $cat and $done = 1 and return undef;
+            }
+            if ( not defined $pkg_it ) {
+                $pkg_it = packages()->iter_fast($cat);
+            }
+            $pkg = $pkg_it->();
+            not defined $pkg and do { undef $cat; undef $pkg_it; 1 }
+              and next;
+
+            my $ebuild = ebuilds()->iter_fast($pkg)->();
+            next unless defined $ebuild;
+
+            return [ $cat, $pkg ];
+        }
+    };
+}
+
 sub ebuild_iterator {
     my $categories = categories()->iter_fast( $_[0] );
     my $pkg_it;
