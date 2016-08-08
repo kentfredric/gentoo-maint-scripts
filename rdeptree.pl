@@ -147,6 +147,9 @@ sub find_candidates {
 
             next line unless $line =~ $matchre;
           atom: for my $atom (@atoms) {
+
+                # Ignore self-dependency
+                next atom if $atom eq $dist;
                 next atom if exists $matched_dists{$dist}{$atom};
                 if ( $line =~ $atomrules{$atom} ) {
                     $matched_dists{$dist}{$atom} = 1;
