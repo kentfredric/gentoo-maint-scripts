@@ -116,6 +116,38 @@ sub ticker {
         }
     };
 }
+
+my %does_cycles;
+my %inside;
+
+sub heat_for {
+    my ( $hash, $key ) = @_;
+
+    # hash is list of
+    # package => wantedby => 1
+    if ( not exists $hash->{$key} ) {
+        return 1;
+    }
+    if ( exists $hash->{$key} and not keys %{ $hash->{$key} } ) {
+        return 1;
+    }
+    my $total = 1;
+    for my $dependent ( keys %{ $hash->{$key} } ) {
+        next if $does_cycles{$dependent};
+        if ( $inside{$dependent} ) {
+            *STDERR->print("\e[31m Cycle! Members: $dependent ->");
+            pp \%inside;
+            $does_cycles{$dependent} = {%inside};
+            *STDERR->print("\e[0m\n");
+            next;
+        }
+        $inside{$dependent} = 1;
+        $total += heat_for( $hash, $dependent );
+        delete $inside{$dependent};
+    }
+    return $total;
+}
+
 sub score_heat {
     my (%hash) = %{ $_[0] };
     my (%wanted);
