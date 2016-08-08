@@ -93,7 +93,7 @@ sub find_candidates {
     # Fast-pass with a compiled regex
     my $matchre_s        = join q[|], map quotemeta, @atoms;
     my $rc_suffix        = qr/_alpha\d*|_beta\d*|_pre\d*|_rc\d*|_p\d*/;
-    my $version_suffix   = qr/-\d+(.\d+)*(\s|$|\W|$rc_suffix)/;
+    my $version_suffix   = qr/-\d+(?:.\d+)*(?:\s|$|\W|$rc_suffix)/;
     my $nonatom          = qr/[^A-Za-z0-9-]/;
     my $optional_version = qr/(?: \s | $ | ${nonatom} | ${version_suffix} )/x;
 
