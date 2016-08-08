@@ -150,39 +150,24 @@ sub heat_for {
 
 sub score_heat {
     my (%hash) = %{ $_[0] };
+
+    my $wanted_by = mk_wanted_by( \%hash );
+
     my (%wanted);
     my (%wanted_scores);
     my $max_score = 0;
-    for my $package ( keys %hash ) {
-        for my $wants ( keys %{ $hash{$package} } ) {
-            push @{ $wanted{$wants} }, $package;
-            $wanted_scores{$wants}++;
-            $max_score = $wanted_scores{$wants}
-              if $max_score < $wanted_scores{$wants};
-        }
+
+    for my $package (
+        keys %{ { map { ( $_ => 1 ) } keys %hash, keys %{$wanted_by} } } )
+    {
+        $wanted_scores{$package} = heat_for( $wanted_by, $package );
+        $wanted{$package} = [ keys %{ $wanted_by->{$package} } ];
     }
 
     # Initial sort
     my (@pairs) = sort { $a->[1] <=> $b->[1] || $a->[0] cmp $b->[0] }
       map { [ $_, $wanted_scores{$_}, [], 1 ] } keys %wanted;
 
-    # Percolate scores in ascending score order
-    for my $pair (@pairs) {
-        my ( $module, $score, $wanted_by, $boost ) = @{$pair};
-        for my $wanter ( @{ $wanted{$module} || [] } ) {
-            next unless exists $wanted_scores{$wanter};
-            $wanted_scores{$module} += $wanted_scores{$wanter};
-        }
-    }
-
-    # Apply percolated scores
-    for my $pair (@pairs) {
-        my ( $module, $score, $wanted_by, $boost ) = @{$pair};
-        for my $wanter ( @{ $wanted{$module} || [] } ) {
-            next unless exists $wanted_scores{$wanter};
-            $pair->[1] += ( $wanted_scores{$wanter} / 2 );
-        }
-    }
     for my $pair (@pairs) {
         my ( $module, $score ) = @{$pair};
         $pair->[2] = [
