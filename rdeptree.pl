@@ -40,6 +40,9 @@ if ( $ENV{ALL} ) {
     *STDERR->print("\n");
 }
 
+if ( $ENV{TARGET_DEPTH} ) {
+    $target_depth = $ENV{TARGET_DEPTH};
+}
 
 
 for ( 0 .. $target_depth ) {
