@@ -171,10 +171,11 @@ sub score_heat {
     for my $pair (@pairs) {
         my ( $module, $score ) = @{$pair};
         $pair->[2] = [
-            sort {
+            map { $_ . '(' . ( $wanted_scores{$_} || 0 ) . ')' }
+              sort {
                 ( $wanted_scores{$b} || 0 ) <=> ( $wanted_scores{$a} || 0 )
                   || $a cmp $b
-            } @{ $wanted{$module} || [] }
+              } @{ $wanted{$module} || [] }
         ];
     }
 
