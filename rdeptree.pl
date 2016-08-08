@@ -91,6 +91,20 @@ sub find_candidates {
     return \%matched_dists;
 }
 
+sub mk_wanted_by {
+    my ($hash) = @_;
+
+    # hash is a hash of
+    # { WHAT => { WANTED => 1 }}
+    my ($out) = {};
+    for my $what ( keys %{$hash} ) {
+        for my $wanted ( keys %{ $hash->{$what} } ) {
+            $out->{$wanted}->{$what} = 1;
+        }
+    }
+    return $out;
+}
+
 sub ticker {
     my ( $freq, $callback ) = @_;
     my $last_update;
