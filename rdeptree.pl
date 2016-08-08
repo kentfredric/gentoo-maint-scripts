@@ -160,6 +160,10 @@ sub files {
     return $FILE_RULE;
 }
 
+sub ebuilds {
+    return files()->name(qr/.ebuild$/);
+}
+
 sub ebuild_iterator {
     my $categories = categories()->iter_fast( $_[0] );
     my $pkg_it;
