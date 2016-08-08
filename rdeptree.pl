@@ -19,6 +19,17 @@ use constant KEYWORD_LIST => (
     ? ( split / /, $ENV{KEYWORD_LIST} )
     : ( 'm68k', '~m68k' )
 );
+use constant SHOW_DEPS => (
+    $ENV{NO_DEPS}
+    ? 0
+    : 1
+);
+use constant ITEM_LIMIT => (
+      $ENV{ITEM_LIMIT}
+    ? $ENV{ITEM_LIMIT}
+    : -1
+);
+
 use Data::Dump qw(pp);
 
 my ($target_depth)  = 3;
@@ -67,14 +78,39 @@ for ( 0 .. $target_depth ) {
     @starting_keys = grep { not exists $previous_state->{$_} } keys %{$next};
 }
 
+use Text::Wrap qw( wrap );
 use Time::HiRes qw( clock_gettime CLOCK_THREAD_CPUTIME_ID );
 
 print pp $aggregate;
 print "\n";
 for my $heat ( score_heat($aggregate) ) {
-    my ( $name, $score, $items ) = @{$heat};
-    printf "%-60s: %10.1f <= %-120s\n", $name, $score,
-      substr do { join q[, ], @{$items} }, 0, 120;
+    local $Text::Wrap::columns = 120 + 4 + 72;
+    local $Text::Wrap::huge    = 'overflow';
+
+    my ( $name, $score, $items, $wants ) = @{$heat};
+    my $leader = sprintf "%-60s: %10d", $name, $score;
+    my $wrapped = "";
+    if ( ITEM_LIMIT == 0 ) {
+        $wrapped = $leader;
+    }
+    else {
+        my @new_items = @{$items};
+        if ( ITEM_LIMIT > 0 and scalar @new_items > ITEM_LIMIT ) {
+            @new_items = splice @new_items, 0, ITEM_LIMIT;
+        }
+        $wrapped =
+          wrap( "$leader <= ", ' ' x ( 72 + 4 ), join q[, ], @new_items );
+    }
+    printf "\e[1m%s\e[0m\n", ( length $wrapped ? $wrapped : $leader );
+    if ( SHOW_DEPS and ITEM_LIMIT != 0 ) {
+        $leader = sprintf "%72s => ", "";
+        my @new_items = @{$wants};
+        if ( ITEM_LIMIT > 0 and scalar @new_items > ITEM_LIMIT ) {
+            @new_items = splice @new_items, 0, ITEM_LIMIT;
+        }
+        $wrapped = wrap( $leader, ' ' x ( 72 + 4 ), join q[, ], @new_items );
+        printf "%s\n", $wrapped;
+    }
 }
 
 sub find_candidates {
