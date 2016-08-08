@@ -109,6 +109,11 @@ sub find_candidates {
     my $cats = 'DOESNOTEXIST';
     my $pns  = 'DOESNOTEXIST';
 
+# NB: When you have ~30k regex, compiling them once for every line of every file is slow
+    my %atomrules;
+    for my $atom (@atoms) {
+        $atomrules{$atom} = qr/${prequalifier}\Q${atom}\E${optional_version}/;
+    }
     my $ticker =
       ticker( 0.04 => sub { *STDERR->printf( "%30s/%-50s\r", $cats, $pns ) } );
 
@@ -143,7 +148,7 @@ sub find_candidates {
             next line unless $line =~ $matchre;
           atom: for my $atom (@atoms) {
                 next atom if exists $matched_dists{$dist}{$atom};
-                if ( $line =~ qr/${nonatom}${atom}${optional_version}/ ) {
+                if ( $line =~ $atomrules{$atom} ) {
                     $matched_dists{$dist}{$atom} = 1;
 
                     # printf "%s -> %s\n", path($file)->relative(root), $atom;
