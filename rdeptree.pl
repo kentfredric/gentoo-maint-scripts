@@ -17,6 +17,9 @@ my (@starting_keys) = (
 );
 
 my $aggregate = {};
+if ( $ARGV[0] ) {
+    @starting_keys = @ARGV;
+}
 
 if ( $ENV{ALL} ) {
     do { my $selected = select *STDERR; $|++; select $selected };
