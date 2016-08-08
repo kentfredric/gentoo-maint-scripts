@@ -86,6 +86,7 @@ sub find_candidates {
     my $optional_version = qr/(?: \s | $ | ${nonatom} | ${version_suffix} )/x;
     my $matchre = qr{ ${nonatom} (?:${matchre_s}) ${optional_version} }x;
 
+    my $blankline_re     = qr/^\s*(#|$)/;
     my %matched_dists;
     my $last_pn  = 'DOESNOTEXIST';
     my $last_cat = 'DOESNOTEXIST';
@@ -106,7 +107,7 @@ sub find_candidates {
             next file if $n_atoms == keys %{ $matched_dists{$dist} || {} };
 
             # skip comments/blanks
-            next line if $line =~ /^\s*(#.*)?$/;
+            next line if $line =~ $blankline_re;
             next line unless $line =~ $matchre;
           atom: for my $atom (@atoms) {
                 next atom if exists $matched_dists{$dist}{$atom};
