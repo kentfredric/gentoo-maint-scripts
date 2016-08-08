@@ -5,8 +5,20 @@ use warnings;
 
 use Path::Iterator::Rule;
 use Path::Tiny qw( path );
+
 use constant root => '/usr/local/gentoo';
 
+# ignore, skip, require
+use constant KEYWORDS => (
+      $ENV{KEYWORD_MODE}
+    ? $ENV{KEYWORD_MODE}
+    : 'ignore'
+);
+use constant KEYWORD_LIST => (
+    $ENV{KEYWORD_LIST}
+    ? ( split / /, $ENV{KEYWORD_LIST} )
+    : ( 'm68k', '~m68k' )
+);
 use Data::Dump qw(pp);
 
 my ($target_depth)  = 3;
@@ -86,7 +98,10 @@ sub find_candidates {
     my $optional_version = qr/(?: \s | $ | ${nonatom} | ${version_suffix} )/x;
     my $matchre = qr{ ${nonatom} (?:${matchre_s}) ${optional_version} }x;
 
+    my $keyword_res      = join q[|], map quotemeta, KEYWORD_LIST;
+    my $keyword_re       = qr/(?:^|[ ])(?:$keyword_res)(?:[ ]|$)/;
     my $blankline_re     = qr/^\s*(#|$)/;
+    my $keywords_extract = qr/^\s*KEYWORDS=["']?(.*)["']?\s*$/;
     my $commands         = qr/src_remove_dual(_man)?/;
     my %matched_dists;
     my $last_pn  = 'DOESNOTEXIST';
@@ -112,6 +127,17 @@ sub find_candidates {
 
             # skip deps mentioned in function calls
             next line if $line =~ $commands;
+
+            my $keywords;
+            if ( KEYWORDS eq 'require' and $line =~ $keywords_extract ) {
+                $keywords = $1;
+                next unless $keywords =~ $keyword_re;
+            }
+            if ( KEYWORDS eq 'skip' and $line =~ $keywords_extract ) {
+                $keywords = $1;
+                next if $keywords =~ $keyword_re;
+            }
+
             next line unless $line =~ $matchre;
           atom: for my $atom (@atoms) {
                 next atom if exists $matched_dists{$dist}{$atom};
