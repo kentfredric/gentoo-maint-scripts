@@ -16,7 +16,6 @@ my (@starting_keys) = (
     'dev-perl/Test-CPAN-Meta',         'dev-perl/Test-Distribution',
 );
 
-my $aggregate = {};
 if ( $ARGV[0] ) {
     @starting_keys = @ARGV;
 }
@@ -44,6 +43,7 @@ if ( $ENV{TARGET_DEPTH} ) {
     $target_depth = $ENV{TARGET_DEPTH};
 }
 
+my $aggregate = { map { $_ => {} } @starting_keys };
 
 for ( 0 .. $target_depth ) {
     my $previous_state = { %{$aggregate} };
