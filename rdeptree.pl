@@ -98,7 +98,7 @@ sub find_candidates {
     my $optional_version = qr/(?: \s | $ | ${nonatom} | ${version_suffix} )/x;
 
     # Excludes !< ! !> and !! on purpose.
-    my $prequalifier     = qr/(?: (?:\s|^|["']) (?: = | [><]=? )? )/x;
+    my $prequalifier = qr/(?: (?:\s|^|["']) (?: = | [><]=? )? )/x;
     my $matchre = qr{ ${prequalifier} (?:${matchre_s}) ${optional_version} }x;
     my $keyword_res      = join q[|], map quotemeta, KEYWORD_LIST;
     my $keyword_re       = qr/(?:^|[ ])(?:$keyword_res)(?:[ ]|$)/;
