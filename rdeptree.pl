@@ -26,6 +26,9 @@ for ( 0 .. 2 ) {
     }
     @starting_keys = grep { not exists $previous_state->{$_} } keys %{$next};
 }
+
+use Time::HiRes qw( clock_gettime CLOCK_THREAD_CPUTIME_ID );
+
 print pp $aggregate;
 print "\n";
 for my $heat ( score_heat($aggregate) ) {
@@ -88,6 +91,17 @@ sub find_candidates {
     return \%matched_dists;
 }
 
+sub ticker {
+    my ( $freq, $callback ) = @_;
+    my $last_update;
+    return sub {
+        my $now = clock_gettime(CLOCK_THREAD_CPUTIME_ID);
+        if ( not defined $last_update or $freq < ( $now - $last_update ) ) {
+            $last_update = $now;
+            $callback->();
+        }
+    };
+}
 sub score_heat {
     my (%hash) = %{ $_[0] };
     my (%wanted);
