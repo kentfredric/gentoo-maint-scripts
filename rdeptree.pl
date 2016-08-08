@@ -87,6 +87,7 @@ sub find_candidates {
     my $matchre = qr{ ${nonatom} (?:${matchre_s}) ${optional_version} }x;
 
     my $blankline_re     = qr/^\s*(#|$)/;
+    my $commands         = qr/src_remove_dual(_man)?/;
     my %matched_dists;
     my $last_pn  = 'DOESNOTEXIST';
     my $last_cat = 'DOESNOTEXIST';
@@ -108,6 +109,9 @@ sub find_candidates {
 
             # skip comments/blanks
             next line if $line =~ $blankline_re;
+
+            # skip deps mentioned in function calls
+            next line if $line =~ $commands;
             next line unless $line =~ $matchre;
           atom: for my $atom (@atoms) {
                 next atom if exists $matched_dists{$dist}{$atom};
