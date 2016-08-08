@@ -67,7 +67,11 @@ for my $heat ( score_heat($aggregate) ) {
 
 sub find_candidates {
     my (@atoms) = @_;
-    *STDERR->print("\nScanning for: @atoms\n");
+    {
+        my $atom_text = substr ${ \join q[, ], @atoms }, 0, 240;
+        $atom_text =~ s/,\s\S*?\z/.../ if 200 < length $atom_text;
+        *STDERR->print("\nScanning for(${\scalar @atoms}): $atom_text\n");
+    }
     do { my $selected = select *STDERR; $|++; select $selected };
 
     my $it      = ebuild_iterator(root);
