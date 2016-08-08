@@ -9,6 +9,7 @@ use constant root => '/usr/local/gentoo';
 
 use Data::Dump qw(pp);
 
+my ($target_depth)  = 3;
 my (@starting_keys) = (
     'dev-perl/Test-Pod',               'dev-perl/Test-Pod-Coverage',
     'dev-perl/Test-Portability-Files', 'dev-perl/Test-Perl-Critic',
@@ -17,7 +18,28 @@ my (@starting_keys) = (
 
 my $aggregate = {};
 
-for ( 0 .. 2 ) {
+if ( $ENV{ALL} ) {
+    do { my $selected = select *STDERR; $|++; select $selected };
+    *STDERR->print("Reticulating splines");
+    my $ticker = ticker( 0.04 => sub { *STDERR->print('.'); } );
+    @starting_keys = ();
+    $target_depth  = 1;
+    my $it = package_iterator(root);
+    while ( my $package = $it->() ) {
+        $ticker->();
+        my ( $cat, $pn ) = @{$package};
+        my ($distname) = path($pn)->relative(root)->stringify;
+        next
+          unless $distname =~ qr[dev-perl/]
+          or $distname =~ qr[virtual/perl-];
+        push @starting_keys, $distname;
+    }
+    *STDERR->print("\n");
+}
+
+
+
+for ( 0 .. $target_depth ) {
     my $previous_state = { %{$aggregate} };
     my $next           = find_candidates(@starting_keys);
     for my $source ( keys %{$next} ) {
