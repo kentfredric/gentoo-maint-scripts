@@ -11,7 +11,7 @@ $ENV{GPG_TTY} //= qx{tty};
 use constant _inc => path(
     sub { ( caller(0) )[1] }
       ->()
-)->realpath->parent->child('lib')->stringify;
+)->absolute->realpath->parent->child('lib')->stringify;
 use lib _inc;
 
 use My::Git::Wrapper;
@@ -24,6 +24,7 @@ use constant FORCE_REBASE  => $ENV{FORCE_REBASE};
 use constant LOCAL_UPDATES => $ENV{LOCAL_UPDATES};
 use constant DO_ATTIC      => $ENV{ATTIC};
 use constant NO_PUSH       => $ENV{NO_PUSH};
+use constant NO_SYNC       => $ENV{NO_SYNC};
 
 use constant UPSTREAM_REPO   => 'upstream';
 use constant UPSTREAM_BRANCH => 'master';
@@ -41,28 +42,31 @@ use constant STAGING_BRANCH => 'staging-for-gentoo';
 my $GW = My::Git::Wrapper->new("/usr/local/gentoo");
 
 my (@MERGE_LIST) = (    #
-    'bump-Pod-Spell',
-    'bump-POE-Component-Client-DNS',
-    'bump-POE-Component-IKC',
-    'bump-POSIX-strftime-Compiler',
-    'bump-PostScript-Simple',
-    'bump-PPIx-Regexp',
-    'bump-Probe-Perl',
-    'bump-Proc-Daemon',
 );
 
-my %NEEDS = (
-    #
-);
+my %NEEDS =
+  ( map { ( $MERGE_LIST[$_], $MERGE_LIST[ $_ - 1 ] ) }
+      ( 1 .. ( scalar @MERGE_LIST ) - 1 ) );
+
+for my $target (@MERGE_LIST) {
+    if ( not exists $NEEDS{$target} ) {
+        printf "- $target => root\n";
+        next;
+    }
+    printf "- $target => $NEEDS{$target}\n";
+    next;
+}
 
 #my (@ATTIC) = ( 'perl-dist-zilla', );
 #
 #push @STAGING_LIST, @ATTIC if DO_ATTIC;
 
-$TASK = "SYNC";
+unless (NO_SYNC) {
+    $TASK = "SYNC";
 
-refresh_remote( $GW, UPSTREAM_REPO ) if not LOCAL_UPDATES;
-
+    refresh_remote( $GW, UPSTREAM_REPO ) if not LOCAL_UPDATES;
+}
+$TASK = "CHECK";
 exit 0 unless LOCAL_UPDATES or should_rebase();
 
 unless ( branch_contains( $GW, QUEUE_BRANCH, UPSTREAM_REF ) ) {
@@ -118,6 +122,7 @@ item: for my $target (@MERGE_LIST) {
             'refs/remotes/' . MY_REPO . '/' . $real_name );
     }
     upload($real_name) unless NO_PUSH;
+    $needs_reconstruct = 1;
 }
 
 # All these topic branches are then played out in linear order
@@ -235,7 +240,6 @@ sub upload {
 sub rebase {
     my ( $what, $onto ) = @_;
     note( "Rebase $what onto $onto", ['cyan'] );
-    show_new_since( $GW, $onto, $what );
 
     #   git says "$what" is "upstream" and "$onto" is "branch"
     #   .... Not confusing at all<!>

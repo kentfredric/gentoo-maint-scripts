@@ -1,8 +1,8 @@
 use strict;
 use warnings;
 
-my $from = "dev-perl/Period";
-my $to   = "dev-perl/Time-Period";
+my $from = "dev-perl/yaml";
+my $to   = "dev-perl/YAML";
 
 use Path::Tiny qw( path cwd );
 

@@ -25,18 +25,26 @@ use constant SHOW_DEPS => (
     : 1
 );
 use constant ITEM_LIMIT => (
-      $ENV{ITEM_LIMIT}
+    exists $ENV{ITEM_LIMIT} and length $ENV{ITEM_LIMIT}
     ? $ENV{ITEM_LIMIT}
     : -1
 );
+use constant TRACE_MATCH => $ENV{TRACE_MATCH};
+use constant SHOW_MATCH  => ( $ENV{TRACE_MATCH} || 0 ) == 2;
+use constant TRACE_KEYWORDS => $ENV{TRACE_KEYWORDS};
 
 use Data::Dump qw(pp);
 
 my ($target_depth)  = 3;
 my (@starting_keys) = (
-    'dev-perl/Test-Pod',               'dev-perl/Test-Pod-Coverage',
-    'dev-perl/Test-Portability-Files', 'dev-perl/Test-Perl-Critic',
-    'dev-perl/Test-CPAN-Meta',         'dev-perl/Test-Distribution',
+    'dev-perl/CPAN-Changes',      'dev-perl/Test-Pod',
+    'dev-perl/Test-Pod-Coverage', 'dev-perl/Test-Portability-Files',
+    'dev-perl/Test-Perl-Critic',  'dev-perl/Test-CPAN-Meta',
+    'dev-perl/Test-Distribution', 'dev-perl/Test-EOL',
+    'dev-perl/Test-Manifest',     'dev-perl/Test-NoTabs',
+    'dev-perl/Test-DistManifest', 'dev-perl/Pod-Coverage',
+    'dev-perl/Test-use-ok',       'dev-perl/Test-Tester',
+    'dev-perl/Moose',
 );
 
 if ( $ARGV[0] ) {
@@ -45,24 +53,28 @@ if ( $ARGV[0] ) {
 
 if ( $ENV{ALL} ) {
     do { my $selected = select *STDERR; $|++; select $selected };
-    *STDERR->print("Reticulating splines");
-    my $ticker = ticker( 0.04 => sub { *STDERR->print('.'); } );
+    *STDERR->print("Reticulating splines:");
+    my $ticker = arrow_ticker( 0.04 => sub { *STDERR->print( $_[0] ) } );
+    my $ticker_x = ticker( 0.4 => sub { *STDERR->print('-') } );
     @starting_keys = ();
-    $target_depth  = 1;
+    $target_depth  = 0;
     my $it = package_iterator(root);
+
     while ( my $package = $it->() ) {
         $ticker->();
+        $ticker_x->();
         my ( $cat, $pn ) = @{$package};
         my ($distname) = path($pn)->relative(root)->stringify;
         next
           unless $distname =~ qr[dev-perl/]
-          or $distname =~ qr[virtual/perl-];
-        push @starting_keys, $distname;
+           or $distname =~ qr[virtual/perl-]
+          ;
+             push @starting_keys, $distname;
     }
     *STDERR->print("\n");
 }
 
-if ( $ENV{TARGET_DEPTH} ) {
+if ( exists $ENV{TARGET_DEPTH} and length "$ENV{TARGET_DEPTH}" ) {
     $target_depth = $ENV{TARGET_DEPTH};
 }
 
@@ -134,7 +146,7 @@ sub find_candidates {
     my $optional_version = qr/(?: \s | $ | ${nonatom} | ${version_suffix} )/x;
 
     # Excludes !< ! !> and !! on purpose.
-    my $prequalifier = qr/(?: (?:\s|^|["']) (?: = | [><]=? )? )/x;
+    my $prequalifier = qr/(?: (?:\s|^|["']) (?: = | [><]=? | ~ )? )/x;
     my $matchre = qr{ ${prequalifier} (?:${matchre_s}) ${optional_version} }x;
     my $keyword_res      = join q[|], map quotemeta, KEYWORD_LIST;
     my $keyword_re       = qr/(?:^|[ ])(?:$keyword_res)(?:[ ]|$)/;
@@ -150,6 +162,10 @@ sub find_candidates {
     for my $atom (@atoms) {
         $atomrules{$atom} = qr/${prequalifier}\Q${atom}\E${optional_version}/;
     }
+    my @keyword_rules;
+    for my $keyword ( map quotemeta, KEYWORD_LIST ) {
+      push @keyword_rules, [ qr{(?:^|[ ])(?:$keyword)(?:[ ]|$)}, $keyword ];
+    }
     my $ticker =
       ticker( 0.04 => sub { *STDERR->printf( "%30s/%-50s\r", $cats, $pns ) } );
 
@@ -158,8 +174,12 @@ sub find_candidates {
         $pns  = path($pn)->relative($cat)->stringify;
         $ticker->();
         my $dist = "$cats/$pns";
-        next if exists $matched_dists{$dist};
+
         my $fh = path($file)->openr_raw;
+        my $keywords;
+        my $keywords_matched;
+        my @matched_keywords;
+
       line: while ( my $line = <$fh> ) {
 
      # Optimisation speeds up early passes by stopping IO if all atoms are found
@@ -171,15 +191,16 @@ sub find_candidates {
             # skip deps mentioned in function calls
             next line if $line =~ $commands;
 
-            my $keywords;
-            if ( KEYWORDS eq 'require' and $line =~ $keywords_extract ) {
+              if ( KEYWORDS eq 'require' and $line =~ $keywords_extract ) {
                 $keywords = $1;
-                next unless $keywords =~ $keyword_re;
+                next file unless $keywords =~ $keyword_re;
+                $keywords_matched = 1;
             }
             if ( KEYWORDS eq 'skip' and $line =~ $keywords_extract ) {
                 $keywords = $1;
-                next if $keywords =~ $keyword_re;
+                next file if $keywords =~ $keyword_re;
             }
+
 
             next line unless $line =~ $matchre;
           atom: for my $atom (@atoms) {
@@ -188,12 +209,25 @@ sub find_candidates {
                 next atom if $atom eq $dist;
                 next atom if exists $matched_dists{$dist}{$atom};
                 if ( $line =~ $atomrules{$atom} ) {
+
                     $matched_dists{$dist}{$atom} = 1;
-
-                    # printf "%s -> %s\n", path($file)->relative(root), $atom;
-                    chomp $line;
-
-                    # print STDERR "## $line\n";
+                    if ( TRACE_MATCH ) {
+                      *STDERR->printf(" \e[32m*\e[0m Match: %10s -> %s", $atom, $dist);
+                      
+                      if ( $keywords_matched and not @matched_keywords ) {
+                           for my $rule ( @keyword_rules ) {
+                           push @matched_keywords, $rule->[1] if $keywords =~ $rule->[0];
+                        }
+                      }
+                      $keywords_matched and *STDERR->printf(" (%s)",join q[ ], @matched_keywords);
+                    }
+                    if ( SHOW_MATCH ) {
+                      chomp $line;
+                      *STDERR->printf( "\e[31m<%s>\e[0m", $line );
+                    }
+                    if ( SHOW_MATCH or TRACE_MATCH ) {
+                      *STDERR->print("\n");
+                    }
                 }
             }
         }
@@ -225,6 +259,52 @@ sub ticker {
             $callback->();
         }
     };
+}
+
+sub smile_ticker {
+    my ( $freq, $callback ) = @_;
+    my (@symbols) = ( " ;)", " :)", ">:)", " :P", " :]", "3:)" );
+    my $i = 0;
+    return ticker(
+        $freq,
+        sub {
+            my $symbol = $symbols[ $i++ % ( scalar @symbols ) ];
+            $callback->( $symbol . ( qq[\b] x 3 ) );
+        }
+    );
+}
+
+sub slash_ticker {
+    my ( $freq, $callback ) = @_;
+    my (@symbols) = ( "/", "-", "\\", "|" );
+    my $i = 0;
+    return ticker(
+        $freq,
+        sub {
+            my $symbol = $symbols[ $i++ % ( scalar @symbols ) ];
+            $callback->( $symbol . ( qq[\b] x 1 ) );
+        }
+    );
+}
+
+sub arrow_ticker {
+    my ( $freq, $callback ) = @_;
+
+    #    my ( @symbols ) = ( " ;)" , " :)", ">:)", " :P", " :]", "3:)" );
+    my (@symbols) = (
+        "\e[31m>\e[0m   ", "\e[31m>\e[32m>\e[0m  ",    #
+        " \e[32m>\e[0m  ", " \e[32m>\e[33m>\e[0m ",    #
+        "  \e[33m>\e[0m ", "  \e[33m>\e[34m>\e[0m",    #
+        "   \e[34m>\e[0m", "\e[31m>  \e[34m>\e[0m",    #
+    );
+    my $i = 0;
+    return ticker(
+        $freq,
+        sub {
+            my $symbol = $symbols[ $i++ % ( scalar @symbols ) ];
+            $callback->( $symbol . ( qq[\b] x 4 ) );
+        }
+    );
 }
 
 my %does_cycles;
