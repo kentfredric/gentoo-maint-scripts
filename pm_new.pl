@@ -6,7 +6,21 @@
 use strict;
 use warnings;
 
-use constant repo => '/usr/local/gentoo';
+BEGIN {
+  require constant;
+  require File::Spec::Functions;
+  my $cwd = File::Spec::Functions::rel2abs('.');
+  warn $cwd;
+  if ( $cwd =~ qr{\A(/usr/local/gentoo)} ) {
+    constant->import( repo => "$1" );
+  }
+  elsif ( $cwd =~ qr{\A(/usr/local/perl-overlay)} ) {
+    constant->import( repo => "$1" );
+  }
+  else {
+    die "Can't guess repo root"
+  }
+}
 use Path::Tiny qw( path cwd );
 use Capture::Tiny qw( capture_stdout );
 use Gentoo::PerlMod::Version qw( gentooize_version );
