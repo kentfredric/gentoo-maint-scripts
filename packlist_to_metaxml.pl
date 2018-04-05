@@ -63,9 +63,23 @@ if ( not -e $ARGV[0] ) {
 }
 
 my $pl       = ExtUtils::Packlist->new( $ARGV[0] );
+my $pfx      = "/nfs-mnt/amd64-root/";
+my @files;
+
+for my $file ( sort keys %{$pl} ) {
+  unless (  -e $file or -e "$pfx/$file" ) {
+    warn "$file (or $pfx/$file) not found, skipping\n";
+    next;
+  }
+  if ( $file =~ /\.bin$/ ) {
+    warn "$file matches blacklist, skipping\n";
+    next;
+  }
+  push @files, -e $file ? $file : "$pfx/$file";
+}
 my $provides = Module::Metadata->provides(
     version => 2,
-    files   => [ grep { -e } sort keys %{$pl} ]
+    files   => \@files,
 );
 
 my $content = path('metadata.xml')->slurp_raw;
