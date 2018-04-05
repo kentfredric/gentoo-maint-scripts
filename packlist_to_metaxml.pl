@@ -54,6 +54,14 @@ BEGIN {
         return $p;
     };
 }
+
+if ( not $ARGV[0] ) {
+  die "Must pass a packlist\n";
+}
+if ( not -e $ARGV[0] ) {
+  die "Packlist $ARGV[0] does not exist";
+}
+
 my $pl       = ExtUtils::Packlist->new( $ARGV[0] );
 my $provides = Module::Metadata->provides(
     version => 2,
