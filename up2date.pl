@@ -9,6 +9,15 @@ use Data::Dump qw( pp );
 use Path::Tiny qw( path );
 use List::UtilsBy qw( bundle_by );
 use Capture::Tiny qw( capture_stdout );
+use Gentoo::PerlMod::Version qw( gentooize_version );
+
+use constant PORTAGE_ROOT => ( path('.')->realpath->stringify );
+
+BEGIN {
+    unless ( path( PORTAGE_ROOT, 'dev-perl' )->exists ) {
+        die "Expected to be run in a portage repo with dev-perl, sorry";
+    }
+}
 
 my ( $category, $page, $pagesize ) = @ARGV;
 
@@ -25,28 +34,95 @@ my $json = JSON::MaybeXS->new( utf8 => 1 );
 
 for my $package ( @{$interested} ) {
     say "$package:";
+    my $lv_gentoo;
     if ( $ENV{FIND_MISSING} ) {
-        eval {
-          my $data = get_fedver($package);
-          1;
-      } and next;
-      say " \e[31;1m* $package\e[0m Not on Anitya/Release-Monitoring";
-      say for grep { $_=~ /remote-id/ } path('.',$package,'metadata.xml')->lines_raw({ chomp => 1 });
+        say for describe_missing($package);
+        next; 
+    }
+    if ( $ENV{FIND_OUTDATED} ) {
+      say for describe_stale($package);
       next;
     }
-    eval {
-        my $data = get_fedver($package);
-        say " Latest: \e[32m$data->{version}\e[0m";
-        say " Homepage: $data->{homepage}";
-        1;
-    } || do {
-        say " \e[31;1m*\e[0m Not on Anitya/Release-Monitoring";
-    };
-    say " Gentoo:";
+    say for describe_status($package);
+    next;
+}
+
+sub describe_missing {
+    my ($package) = @_;
+    my (@out);
+    eval { my $data = get_fedver($package); 1 } and return @out;
+    return (
+        " \e[31;1m* $package\e[0m Not on Anitya/Release-Monitoring",
+
+        grep { $_ =~ /remote-id/ }
+          path( PORTAGE_ROOT, $package, 'metadata.xml' )
+          ->lines_raw( { chomp => 1 } )
+    );
+}
+
+sub describe_status {
+    my ($package) = @_;
+    my (@out);
+    my ($data);
+    my ($lv_gentoo);
+    eval { $data = get_fedver($package); 1 } or return (
+        " \e[31;1m* $package\e[0m Not on Anitya/Release-Monitoring",
+    );
+    @out = (
+        " Latest: \e[32m$data->{version}\e[0m",
+        " Homepage: $data->{homepage}",
+        " Gentoo:",
+    );
+    eval { $lv_gentoo = gentooize_version( $data->{version}, { lax => 1 });  };
+    my $has_match;
+    
     for my $version ( package_versions($package) ) {
-      say " \e[31;1m- \e[0m$version";
+        my $con  = "";
+        my $coff = "";
+        if ( defined $lv_gentoo and "$version" =~ /\A\Q$lv_gentoo\E(|-r.*)\z/ )
+        {
+            $con  = " \e[32;1m";
+            $coff = "\e[0m";
+            $has_match++;
+        }
+        push @out, " \e[31;1m- \e[0m${con}${version}${coff}";
     }
-    say "";
+    if ( !$has_match ) {
+        push @out, "\e[31;1m- out of date\e[0m";
+    }
+    return (@out,'');
+}
+
+sub describe_stale {
+    my ($package) = @_;
+    my (@out);
+    my ($data);
+    my ($lv_gentoo);
+    eval { $data = get_fedver($package); 1 } or return (
+        " \e[31;1m* $package\e[0m Not on Anitya/Release-Monitoring",
+    );
+    @out = (
+        " Latest: \e[32m$data->{version}\e[0m",
+        " Homepage: $data->{homepage}",
+        " Gentoo:",
+    );
+    eval { $lv_gentoo = gentooize_version( $data->{version}, { lax => 1 });  };
+    my $has_match;
+    
+    for my $version ( package_versions($package) ) {
+        my $con  = "";
+        my $coff = "";
+        if ( defined $lv_gentoo and "$version" =~ /\A\Q$lv_gentoo\E(|-r.*)\z/ )
+        {
+            $con  = " \e[32;1m";
+            $coff = "\e[0m";
+            $has_match++;
+        }
+        push @out, " \e[31;1m- \e[0m${con}${version}${coff}";
+    }
+    return () if $has_match;
+    push @out, "\e[31;1m- out of date\e[0m";
+    return (@out,'');
 }
 
 sub all_perl_category {
@@ -88,7 +164,7 @@ sub package_versions {
     };
     $exit == 0 or die "eix died";
     return map {
-      $_ =~ s/^\Q$package\E-//;
-      $_
+        $_ =~ s/^\Q$package\E-//;
+        $_
     } split /\n/, $lines;
 }
