@@ -30,6 +30,13 @@ if( $ENV{IGNORE_KEYWORDS} ) {
   $wanted_keywords = strip_keywords( $ignore, $wanted_keywords );
 }
 
+if ( $ENV{EXTRA_KEYWORDS} ) {
+  $interested_keywords = [ @{$interested_keywords},
+    STABLEREQ ? splice_keywords( $ENV{EXTRA_KEYWORDS} ) : map { to_stable($_) }
+          splice_keywords( $ENV{EXTRA_KEYWORDS} )
+  ];
+}
+
 warn "[31mWant Keywords:\e[0m @{$wanted_keywords}\n";
 my $target_interested =
   filter_keywords( $interested_keywords, $wanted_keywords );
