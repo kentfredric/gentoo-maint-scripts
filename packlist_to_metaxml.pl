@@ -93,6 +93,14 @@ else {
 
 my $lines = "";
 for my $entry ( sort keys %{$provides} ) {
+    my $file = $provides->{$entry}->{file};
+    my $guess_re = $entry;
+    $guess_re =~ s/(::|')/\//g;
+    $guess_re =~ "$guess_re.pm";
+
+    if ( -1 == index $file, $guess_re ) {
+      warn "$entry via $file\n";
+    }
     $lines .= "$prefix<remote-id type=\"cpan-module\">$entry</remote-id>\n";
 }
 $content =~
